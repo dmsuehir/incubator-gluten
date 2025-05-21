@@ -1454,6 +1454,9 @@ class MiscOperatorSuite extends VeloxWholeStageTransformerSuite with AdaptiveSpa
           .partitionBy("a", "b")
           .mode("overwrite")
           .save(tempDirPath)
+
+        print(tempDir.getPath)
+        spark.read.parquet(tempDir.getCanonicalPath).createOrReplaceTempView("view")
     }
   }
 

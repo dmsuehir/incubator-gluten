@@ -101,7 +101,7 @@ case class WriteFilesExecTransformer(
       input: RelNode,
       validation: Boolean
   ): (RelNode) = {
-    // For partitioned writes, create a preproject node to order columns, otherwise return the original input
+    // For partitioned writes, create a preproject node to order columns
     if (preProjectionNeeded()) {
       // Get the partitioned columns in partition order first, followed by unpartitioned columns
       val (partitionedCols, unpartitionedCols) =
@@ -120,6 +120,7 @@ case class WriteFilesExecTransformer(
         originalInputAttributes.size
       )
     } else {
+      // If a preproject is not needed, return the original input
       input
     }
   }

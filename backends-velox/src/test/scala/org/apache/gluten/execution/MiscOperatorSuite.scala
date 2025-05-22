@@ -1434,15 +1434,14 @@ class MiscOperatorSuite extends VeloxWholeStageTransformerSuite with AdaptiveSpa
       ("b2", 4, "a2")
     )
 
-    val schema = StructType(Seq(
-      StructField("b", StringType, nullable = false),
-      StructField("c", IntegerType, nullable = false),
-      StructField("a", StringType, nullable = false)
-    ))
+    val schema = StructType(
+      Seq(
+        StructField("b", StringType, nullable = false),
+        StructField("c", IntegerType, nullable = false),
+        StructField("a", StringType, nullable = false)
+      ))
 
-    val rdd = spark.sparkContext.parallelize(data).map {
-      case (b, c, a) => Row(b, c, a)
-    }
+    val rdd = spark.sparkContext.parallelize(data).map { case (b, c, a) => Row(b, c, a) }
 
     val my_df = spark.createDataFrame(rdd, schema)
 

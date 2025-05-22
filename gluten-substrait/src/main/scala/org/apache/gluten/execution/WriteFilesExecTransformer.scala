@@ -24,9 +24,10 @@ import org.apache.gluten.metrics.MetricsUpdater
 import org.apache.gluten.substrait.`type`.ColumnTypeNode
 import org.apache.gluten.substrait.SubstraitContext
 import org.apache.gluten.substrait.expression.{ExpressionBuilder, ExpressionNode}
-import org.apache.gluten.substrait.extensions.ExtensionBuilder
+import org.apache.gluten.substrait.extensions.{AdvancedExtensionNode, ExtensionBuilder}
 import org.apache.gluten.substrait.rel.{RelBuilder, RelNode}
 import org.apache.gluten.utils.SubstraitUtil
+
 import org.apache.spark.sql.catalyst.catalog.BucketSpec
 import org.apache.spark.sql.catalyst.catalog.CatalogTypes.TablePartitionSpec
 import org.apache.spark.sql.catalyst.expressions.{Attribute, Expression, Literal}
@@ -38,12 +39,14 @@ import org.apache.spark.sql.execution.datasources.parquet.ParquetFileFormat
 import org.apache.spark.sql.execution.metric.SQLMetric
 import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.types.{ArrayType, MapType, MetadataBuilder}
+
 import io.substrait.proto.{NamedStruct, WriteRel}
 import org.apache.parquet.hadoop.ParquetOutputFormat
 
 import java.util.Locale
-import scala.collection.convert.ImplicitConversions.`collection AsScalaIterable`
+
 import scala.collection.JavaConverters._
+import scala.collection.convert.ImplicitConversions.`collection AsScalaIterable`
 
 /**
  * Note that, the output staging path is set by `ColumnarWriteFilesExec`, each task should have its
@@ -69,33 +72,52 @@ case class WriteFilesExecTransformer(
   val caseInsensitiveOptions: CaseInsensitiveMap[String] = CaseInsensitiveMap(options)
 
   private def preProjectionNeeded(): Boolean = {
-    if (partitionColumns == null || partitionColumns.isEmpty){
+    if (partitionColumns == null || partitionColumns.isEmpty) {
       false
     } else {
       true
     }
   }
 
+  private def createExtensionNode(
+      originalInputAttributes: Seq[Attribute],
+      validation: Boolean): AdvancedExtensionNode = {
+    if (!validation) {
+      ExtensionBuilder.makeAdvancedExtension(
+        BackendsApiManager.getTransformerApiInstance.genWriteParameters(this),
+        SubstraitUtil.createEnhancement(originalInputAttributes)
+      )
+    } else {
+      ExtensionBuilder.makeAdvancedExtension(
+        SubstraitUtil.createEnhancement(originalInputAttributes)
+      )
+    }
+  }
+
   private def createPreProjectionIfNeeded(
-      childOutput: Seq[Attribute],
       context: SubstraitContext,
       originalInputAttributes: Seq[Attribute],
       operatorId: Long,
-      input: RelNode): (RelNode) = {
-    // For partitioned writes, create a preproject node to order columns
+      input: RelNode,
+      validation: Boolean
+  ): (RelNode) = {
+    // For partitioned writes, create a preproject node to order columns, otherwise return the original input
     if (preProjectionNeeded()) {
-      val (partitionedCols, unpartitionedCols) = originalInputAttributes.partition(col => partitionColumns.exists(_.exprId == col.exprId))
-      val orderedPartitionedCols = partitionColumns.flatMap(partCol => partitionedCols.find(_.exprId == partCol.exprId))
+      // Get the partitioned columns in partition order first, followed by unpartitioned columns
+      val (partitionedCols, unpartitionedCols) =
+        originalInputAttributes.partition(col => partitionColumns.exists(_.exprId == col.exprId))
+      val orderedPartitionedCols =
+        partitionColumns.flatMap(partCol => partitionedCols.find(_.exprId == partCol.exprId))
       val orderedCols = orderedPartitionedCols ++ unpartitionedCols
-      val selectOrigins = orderedCols.indices.map(ExpressionBuilder.makeSelection(_))
+      val selectCols = orderedCols.indices.map(ExpressionBuilder.makeSelection(_))
 
       RelBuilder.makeProjectRel(
         input,
-        new java.util.ArrayList[ExpressionNode]((selectOrigins).asJava),
-        ExtensionBuilder.makeAdvancedExtension(SubstraitUtil.createEnhancement(childOutput)),
+        new java.util.ArrayList[ExpressionNode]((selectCols).asJava),
+        createExtensionNode(originalInputAttributes, validation),
         context,
         operatorId,
-        childOutput.size
+        originalInputAttributes.size
       )
     } else {
       input
@@ -116,16 +138,18 @@ case class WriteFilesExecTransformer(
     val childOutput = this.child.output
 
     val inputRelNode = createPreProjectionIfNeeded(
-      childOutput,
       context,
       originalInputAttributes,
       operatorId,
-      input
+      input,
+      validation
     )
 
 //    if (preProjectionNeeded()) {
-//      val (partitionedCols, unpartitionedCols) = originalInputAttributes.partition(col => partitionColumns.exists(_.exprId == col.exprId))
-//      val orderedPartitionedCols = partitionColumns.flatMap(partCol => partitionedCols.find(_.exprId == partCol.exprId))
+//      val (partitionedCols, unpartitionedCols) = originalInputAttributes.partition(
+//          col => partitionColumns.exists(_.exprId == col.exprId))
+//      val orderedPartitionedCols = partitionColumns.flatMap(partCol => partitionedCols.find(
+//          _.exprId == partCol.exprId))
 //      val orderedCols = orderedPartitionedCols ++ unpartitionedCols
 //      val selectOrigins = orderedCols.indices.map(ExpressionBuilder.makeSelection(_))
 //
@@ -143,10 +167,12 @@ case class WriteFilesExecTransformer(
 //    if (preProjectionNeeded() && input != null) {
 //      print("preprojection needed")
 //      // Separate the columns being partitioned from the columns that are not being partitioned
-//      val (partitionedCol, unpartitionedCols) = childOutput.partition(col => partitionColumns.exists(_.exprId == col.exprId))
+//      val (partitionedCol, unpartitionedCols) = childOutput.partition(
+//          col => partitionColumns.exists(_.exprId == col.exprId))
 //      // Reorder the partitioned columns match the order that they are being partitioned
-//      val orderedPartitionedCols = partitionColumns.flatMap(partCol => partitionedCol.find(_.exprId == partCol.exprId))
-//      //Combine the reordered partitioned columns with the list of columns that are not being partitioned
+//      val orderedPartitionedCols = partitionColumns.flatMap(partCol => partitionedCol.find(
+//          _.exprId == partCol.exprId))
+//      //Combine the reordered partitioned columns with the columns that are not being partitioned
 //      val orderedChildOutput = orderedPartitionedCols ++ unpartitionedCols
 //    }
 
@@ -166,6 +192,8 @@ case class WriteFilesExecTransformer(
 
     val nameList =
       ConverterUtils.collectAttributeNames(inputAttributes.toSeq)
+
+    // TODO: Switch this to use createExtensionNode (after verifying that everything else works)
     val extensionNode = if (!validation) {
       ExtensionBuilder.makeAdvancedExtension(
         BackendsApiManager.getTransformerApiInstance.genWriteParameters(this),

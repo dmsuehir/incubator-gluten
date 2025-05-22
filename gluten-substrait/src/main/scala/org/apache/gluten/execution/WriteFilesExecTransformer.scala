@@ -145,37 +145,6 @@ case class WriteFilesExecTransformer(
       validation
     )
 
-//    if (preProjectionNeeded()) {
-//      val (partitionedCols, unpartitionedCols) = originalInputAttributes.partition(
-//          col => partitionColumns.exists(_.exprId == col.exprId))
-//      val orderedPartitionedCols = partitionColumns.flatMap(partCol => partitionedCols.find(
-//          _.exprId == partCol.exprId))
-//      val orderedCols = orderedPartitionedCols ++ unpartitionedCols
-//      val selectOrigins = orderedCols.indices.map(ExpressionBuilder.makeSelection(_))
-//
-//
-//      val preProjectNode = RelBuilder.makeProjectRel(
-//        input,
-//        new java.util.ArrayList[ExpressionNode]((selectOrigins).asJava),
-//        ExtensionBuilder.makeAdvancedExtension(SubstraitUtil.createEnhancement(childOutput)),
-//        context,
-//        operatorId,
-//        childOutput.size
-//      )
-//    }
-
-//    if (preProjectionNeeded() && input != null) {
-//      print("preprojection needed")
-//      // Separate the columns being partitioned from the columns that are not being partitioned
-//      val (partitionedCol, unpartitionedCols) = childOutput.partition(
-//          col => partitionColumns.exists(_.exprId == col.exprId))
-//      // Reorder the partitioned columns match the order that they are being partitioned
-//      val orderedPartitionedCols = partitionColumns.flatMap(partCol => partitionedCol.find(
-//          _.exprId == partCol.exprId))
-//      //Combine the reordered partitioned columns with the columns that are not being partitioned
-//      val orderedChildOutput = orderedPartitionedCols ++ unpartitionedCols
-//    }
-
     for (i <- 0 until childSize) {
       val partitionCol = partitionColumns.find(_.exprId == childOutput(i).exprId)
       if (partitionCol.nonEmpty) {

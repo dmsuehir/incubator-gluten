@@ -1427,6 +1427,8 @@ class MiscOperatorSuite extends VeloxWholeStageTransformerSuite with AdaptiveSpa
   }
 
   test("partitioned write column order") {
+    // Temporary code for partition write
+    // TODO: Replace with test using the parquet test data
     val data = Seq(
       ("b1", 1, "a1"),
       ("b2", 2, "a2"),
@@ -1455,7 +1457,6 @@ class MiscOperatorSuite extends VeloxWholeStageTransformerSuite with AdaptiveSpa
           .save(tempDirPath)
 
         print(tempDir.getPath)
-        spark.read.parquet(tempDir.getCanonicalPath).createOrReplaceTempView("view")
     }
   }
 

@@ -103,26 +103,20 @@ case class WriteFilesExecTransformer(
   ): (RelNode) = {
     // For partitioned writes, create a preproject node to order columns
     if (preProjectionNeeded()) {
-      // Get the partitioned columns in partition order first, followed by unpartitioned columns
-//      val (partitionedCols, unpartitionedCols) =
-//        originalInputAttributes.partition(col => partitionColumns.exists(_.exprId == col.exprId))
-//      val orderedPartitionedCols =
-//        partitionColumns.flatMap(partCol => partitionedCols.find(_.exprId == partCol.exprId))
-//      val orderedCols = orderedPartitionedCols ++ unpartitionedCols
-//      val selectCols = orderedCols.indices.map(ExpressionBuilder.makeSelection(_))
-
+      // Get the indices of partitioned columns in partition order, followed by unpartitioned
       val inputIndices = originalInputAttributes.zipWithIndex
       val partitionExprIds = partitionColumns.map(_.exprId).toSet
-
       val (partitioned, unpartitioned) = inputIndices.partition {
         case (col, _) => partitionExprIds.contains(col.exprId)
       }
-      val orderedIndices = partitionColumns.flatMap { partCol =>
-        partitioned.collect {
-          case (origCol, index) if origCol.exprId == partCol.exprId => index
-        }
+      val orderedIndices = partitionColumns.flatMap {
+        partCol =>
+          partitioned.collect {
+            case (origCol, index) if origCol.exprId == partCol.exprId => index
+          }
       } ++ unpartitioned.map(_._2)
 
+      // Select cols based on the ordered indices
       val selectCols = orderedIndices.map(ExpressionBuilder.makeSelection(_))
 
       RelBuilder.makeProjectRel(
